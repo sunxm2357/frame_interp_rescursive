@@ -28,7 +28,7 @@ def metrics(seq_batch, opt, true_data, pred_data,  psnr_err, ssim_err, multichan
     for t in range(seq_len):
         pred = pred_data[:, :, :, t].astype("uint8")
         target = true_data[:, :, :, t].astype("uint8")
-        if opt.c_dim == 1:
+        if not multichannel:
             pred = np.squeeze(pred, axis=-1)
             target = np.squeeze(target, axis=-1)
         cpsnr[t] = measure.compare_psnr(pred, target)
@@ -90,7 +90,7 @@ def main():
             if opt.data == 'KTH':
                 true_data = bgr2gray_np(true_data)
                 pred_data = bgr2gray_np(pred_data)
-            psnr_err, ssim_err = metrics(seq_batch, opt, true_data, pred_data, psnr_err, ssim_err, multichannel=False)
+            psnr_err, ssim_err = metrics(seq_batch, opt, true_data, pred_data, psnr_err, ssim_err, multichannel=(opt.data != 'KTH'))
 
         if i % (save_freq) == 0 or i == (dataset_size-1):
             print('psnr:', psnr_err.mean(axis=0))
