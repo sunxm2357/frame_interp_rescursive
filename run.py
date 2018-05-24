@@ -1,9 +1,7 @@
-#!/usr/bin/env python2.7
-
 import sys
 import getopt
 import math
-import numpy
+import numpy as np
 import torch
 import torch.utils.serialization
 import PIL
@@ -17,28 +15,28 @@ torch.backends.cudnn.enabled = True  # make sure to use cudnn for computational 
 
 ##########################################################
 
-arguments_strModel = 'lf'
-arguments_strFirst = './images/first.png'
-arguments_strSecond = './images/second.png'
-arguments_strOut = './result.png'
-
-for strOption, strArgument in \
-getopt.getopt(sys.argv[1:], '', [strParameter[2:] + '=' for strParameter in sys.argv[1::2]])[0]:
-    if strOption == '--model':
-        arguments_strModel = strArgument  # which model to use, l1 or lf, please see our paper for more details
-
-    elif strOption == '--first':
-        arguments_strFirst = strArgument  # path to the first frame
-
-    elif strOption == '--second':
-        arguments_strSecond = strArgument  # path to the second frame
-
-    elif strOption == '--out':
-        arguments_strOut = strArgument  # path to where the output should be stored
-
-
-# end
-# end
+# arguments_strModel = 'lf'
+# arguments_strFirst = './images/first.png'
+# arguments_strSecond = './images/second.png'
+# arguments_strOut = './result.png'
+#
+# for strOption, strArgument in \
+# getopt.getopt(sys.argv[1:], '', [strParameter[2:] + '=' for strParameter in sys.argv[1::2]])[0]:
+#     if strOption == '--model':
+#         arguments_strModel = strArgument  # which model to use, l1 or lf, please see our paper for more details
+#
+#     elif strOption == '--first':
+#         arguments_strFirst = strArgument  # path to the first frame
+#
+#     elif strOption == '--second':
+#         arguments_strSecond = strArgument  # path to the second frame
+#
+#     elif strOption == '--out':
+#         arguments_strOut = strArgument  # path to where the output should be stored
+#
+#
+# # end
+# # end
 
 ##########################################################
 
@@ -179,79 +177,76 @@ class Network(torch.nn.Module):
 
 moduleNetwork = Network().cuda()
 
+
 ##########################################################
+def single_pred(first_img, last_img):
+    tensorInputFirst = torch.FloatTensor(np.rollaxis(first_img, 2, 0).astype(np.float32) / 255.0)
+    tensorInputSecond = torch.FloatTensor(np.rollaxis(last_img, 2, 0).astype(np.float32) / 255.0)
+    tensorOutput = torch.FloatTensor()
 
-tensorInputFirst = torch.FloatTensor(
-    numpy.rollaxis(numpy.asarray(PIL.Image.open(arguments_strFirst))[:, :, ::-1], 2, 0).astype(numpy.float32) / 255.0)
-tensorInputSecond = torch.FloatTensor(
-    numpy.rollaxis(numpy.asarray(PIL.Image.open(arguments_strSecond))[:, :, ::-1], 2, 0).astype(numpy.float32) / 255.0)
-tensorOutput = torch.FloatTensor()
+    assert (tensorInputFirst.size(1) == tensorInputSecond.size(1))
+    assert (tensorInputFirst.size(2) == tensorInputSecond.size(2))
 
-assert (tensorInputFirst.size(1) == tensorInputSecond.size(1))
-assert (tensorInputFirst.size(2) == tensorInputSecond.size(2))
+    intWidth = tensorInputFirst.size(2)
+    intHeight = tensorInputFirst.size(1)
 
-intWidth = tensorInputFirst.size(2)
-intHeight = tensorInputFirst.size(1)
+    assert (
+            intWidth <= 1280)  # while our approach works with larger images, we do not recommend it unless you are aware of the implications
+    assert (
+            intHeight <= 720)  # while our approach works with larger images, we do not recommend it unless you are aware of the implications
 
-assert (
-        intWidth <= 1280)  # while our approach works with larger images, we do not recommend it unless you are aware of the implications
-assert (
-        intHeight <= 720)  # while our approach works with larger images, we do not recommend it unless you are aware of the implications
+    intPaddingLeft = int(math.floor(51 / 2.0))
+    intPaddingTop = int(math.floor(51 / 2.0))
+    intPaddingRight = int(math.floor(51 / 2.0))
+    intPaddingBottom = int(math.floor(51 / 2.0))
+    modulePaddingInput = torch.nn.Sequential()
+    modulePaddingOutput = torch.nn.Sequential()
 
-intPaddingLeft = int(math.floor(51 / 2.0))
-intPaddingTop = int(math.floor(51 / 2.0))
-intPaddingRight = int(math.floor(51 / 2.0))
-intPaddingBottom = int(math.floor(51 / 2.0))
-modulePaddingInput = torch.nn.Sequential()
-modulePaddingOutput = torch.nn.Sequential()
+    if True:
+        intPaddingWidth = intPaddingLeft + intWidth + intPaddingRight
+        intPaddingHeight = intPaddingTop + intHeight + intPaddingBottom
 
-if True:
-    intPaddingWidth = intPaddingLeft + intWidth + intPaddingRight
-    intPaddingHeight = intPaddingTop + intHeight + intPaddingBottom
+        if intPaddingWidth != ((intPaddingWidth >> 7) << 7):
+            intPaddingWidth = (((intPaddingWidth >> 7) + 1) << 7)  # more than necessary
+        # end
 
-    if intPaddingWidth != ((intPaddingWidth >> 7) << 7):
-        intPaddingWidth = (((intPaddingWidth >> 7) + 1) << 7)  # more than necessary
+        if intPaddingHeight != ((intPaddingHeight >> 7) << 7):
+            intPaddingHeight = (((intPaddingHeight >> 7) + 1) << 7)  # more than necessary
+        # end
+
+        intPaddingWidth = intPaddingWidth - (intPaddingLeft + intWidth + intPaddingRight)
+        intPaddingHeight = intPaddingHeight - (intPaddingTop + intHeight + intPaddingBottom)
+
+        modulePaddingInput = torch.nn.ReplicationPad2d(
+            [intPaddingLeft, intPaddingRight + intPaddingWidth, intPaddingTop, intPaddingBottom + intPaddingHeight])
+        modulePaddingOutput = torch.nn.ReplicationPad2d(
+            [0 - intPaddingLeft, 0 - intPaddingRight - intPaddingWidth, 0 - intPaddingTop,
+             0 - intPaddingBottom - intPaddingHeight])
     # end
 
-    if intPaddingHeight != ((intPaddingHeight >> 7) << 7):
-        intPaddingHeight = (((intPaddingHeight >> 7) + 1) << 7)  # more than necessary
+    if True:
+        tensorInputFirst = tensorInputFirst.cuda()
+        tensorInputSecond = tensorInputSecond.cuda()
+        tensorOutput = tensorOutput.cuda()
+
+        modulePaddingInput = modulePaddingInput.cuda()
+        modulePaddingOutput = modulePaddingOutput.cuda()
     # end
 
-    intPaddingWidth = intPaddingWidth - (intPaddingLeft + intWidth + intPaddingRight)
-    intPaddingHeight = intPaddingHeight - (intPaddingTop + intHeight + intPaddingBottom)
+    if True:
+        variablePaddingFirst = modulePaddingInput(
+            torch.autograd.Variable(data=tensorInputFirst.view(1, 3, intHeight, intWidth), volatile=True))
+        variablePaddingSecond = modulePaddingInput(
+            torch.autograd.Variable(data=tensorInputSecond.view(1, 3, intHeight, intWidth), volatile=True))
+        variablePaddingOutput = modulePaddingOutput(moduleNetwork(variablePaddingFirst, variablePaddingSecond))
 
-    modulePaddingInput = torch.nn.ReplicationPad2d(
-        [intPaddingLeft, intPaddingRight + intPaddingWidth, intPaddingTop, intPaddingBottom + intPaddingHeight])
-    modulePaddingOutput = torch.nn.ReplicationPad2d(
-        [0 - intPaddingLeft, 0 - intPaddingRight - intPaddingWidth, 0 - intPaddingTop,
-         0 - intPaddingBottom - intPaddingHeight])
-# end
+        tensorOutput.resize_(3, intHeight, intWidth).copy_(variablePaddingOutput.data[0])
+    # end
 
-if True:
-    tensorInputFirst = tensorInputFirst.cuda()
-    tensorInputSecond = tensorInputSecond.cuda()
-    tensorOutput = tensorOutput.cuda()
+    if True:
+        tensorInputFirst = tensorInputFirst.cpu()
+        tensorInputSecond = tensorInputSecond.cpu()
+        tensorOutput = tensorOutput.cpu()
 
-    modulePaddingInput = modulePaddingInput.cuda()
-    modulePaddingOutput = modulePaddingOutput.cuda()
-# end
-
-if True:
-    variablePaddingFirst = modulePaddingInput(
-        torch.autograd.Variable(data=tensorInputFirst.view(1, 3, intHeight, intWidth), volatile=True))
-    variablePaddingSecond = modulePaddingInput(
-        torch.autograd.Variable(data=tensorInputSecond.view(1, 3, intHeight, intWidth), volatile=True))
-    variablePaddingOutput = modulePaddingOutput(moduleNetwork(variablePaddingFirst, variablePaddingSecond))
-
-    tensorOutput.resize_(3, intHeight, intWidth).copy_(variablePaddingOutput.data[0])
-# end
-
-if True:
-    tensorInputFirst = tensorInputFirst.cpu()
-    tensorInputSecond = tensorInputSecond.cpu()
-    tensorOutput = tensorOutput.cpu()
-# end
-
-PIL.Image.fromarray(
-    (numpy.rollaxis(tensorOutput.clamp(0.0, 1.0).numpy(), 0, 3)[:, :, ::-1] * 255.0).astype(numpy.uint8)).save(
-    arguments_strOut)
+    return (np.rollaxis(tensorOutput.clamp(0.0, 1.0).numpy(), 0, 3) * 255.0).astype(np.uint8)
+    # end
