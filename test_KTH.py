@@ -11,15 +11,19 @@ from dataloader.options import *
 from run import *
 import skimage.measure as measure
 from skimage.measure import compare_ssim as ssim
+import pdb
 
 torch.cuda.device(1)  # change this if you have a multiple graphics cards and you want to utilize them
 
 torch.backends.cudnn.enabled = True  # make sure to use cudnn for computational performance
 
 
-def metrics(seq_batch, opt, true_data, pred_data,  psnr_err, ssim_err, multichannel=True):
+def metrics(seq_batch, opt, true_data, pred_data,  psnr_err, ssim_err, savedir, multichannel=True):
     pred_data = np.concatenate((seq_batch[:, :, :, :opt.K], pred_data, seq_batch[:, :, :, opt.K + opt.T:]),  axis=3)
     true_data = np.concatenate((seq_batch[:, :, :, :opt.K], true_data, seq_batch[:, :, :, opt.K + opt.T:]), axis=3)
+    if not multichannel:
+        true_data = bgr2gray_np(true_data)
+        pred_data = bgr2gray_np(pred_data)
     seq_len = opt.K + opt.T + opt.F
 
     cpsnr = np.zeros((seq_len,))
@@ -33,12 +37,19 @@ def metrics(seq_batch, opt, true_data, pred_data,  psnr_err, ssim_err, multichan
             target = np.squeeze(target, axis=-1)
         cpsnr[t] = measure.compare_psnr(pred, target)
         cssim[t] = ssim(target, pred, multichannel=multichannel)
+        if not multichannel:
+            pred = np.expand_dims(pred, axis=-1)
+            target = np.expand_dims(target, axis=-1)
+        pred = draw_frame(pred, t < opt.K or t >= (opt.K + opt.T))
+        target = draw_frame(target, t < opt.K or t >= (opt.K + opt.T))
+        cv2.imwrite(os.path.join(savedir, 'gt_%04d.png'%t), target)
+        cv2.imwrite(os.path.join(savedir, 'pred_%04d.png'%t), pred)
     psnr_err = np.concatenate((psnr_err, cpsnr[None, opt.K:opt.K + opt.T]), axis=0)
     ssim_err = np.concatenate((ssim_err, cssim[None, opt.K:opt.K + opt.T]), axis=0)
     return psnr_err, ssim_err
 
 
-def recursive_inpainting(first_img, last_img, T):
+def recursive_inpainting(first_img, last_img, T, moduleNetwork):
     [h, w, c] = first_img.shape
     pred = np.zeros((h, w, c, T + 2))
     pred[:, :, :, 0] = first_img
@@ -46,18 +57,24 @@ def recursive_inpainting(first_img, last_img, T):
     start = 0
     end = T + 1
     p_start = start
+    middle = end
     p_end = [end]
-    while len(p_end) != 0:
+    while True:
         middle = (p_start + p_end[-1]) / 2
+        # pdb.set_trace()
         if p_start != middle:
-            print('producing the %s frame' % middle)
-            pred[:, :, :, middle] = single_pred(pred[:, :, :, p_start], pred[:, :, :, p_end])
+            # print(p_start, p_end[-1], middle)
+            # pdb.set_trace()
+            pred[:, :, :, middle] = single_pred(pred[:, :, :, p_start], pred[:, :, :, p_end[-1]], moduleNetwork)
+            # if middle - p_start > 1:
             p_end.append(middle)
+            # pdb.set_trace()
         else:
-            p_start = middle
-            p_end.pop(-1)
-            continue
-    return pred[:, :, :, ::-1]
+            p_start = p_end.pop(-1)
+            if len(p_end) == 0:
+                break
+
+    return pred[:, :, :, 1:-1]
 
 
 def main():
@@ -76,6 +93,7 @@ def main():
 
     dataset = CreateDataset(opt)
     dataset_size = len(dataset)
+    moduleNetwork = Network(opt.ckpt).cuda()
     print('# testing videos = %d' % dataset_size)
     for i in range(dataset_size):
         print('dealing %d/%d' % (i, dataset_size))
@@ -83,14 +101,14 @@ def main():
         if opt.pick_mode == 'First': datas = [datas]
         for data in datas:
             seq_batch = data['targets']
+            print(data['video_name'])
+            savedir = os.path.join(opt.img_dir, '%s_%s.png' % (data['video_name'], data['start-end']))
+            makedir(savedir)
             last_preceding = seq_batch[:, :, :, opt.K-1]
             first_following = seq_batch[:, :, :, opt.K + opt.T]
-            pred_data = recursive_inpainting(last_preceding, first_following, opt.T)
+            pred_data = recursive_inpainting(last_preceding, first_following, opt.T, moduleNetwork)
             true_data = seq_batch[:, :, :, opt.K: opt.K + opt.T]
-            if opt.data == 'KTH':
-                true_data = bgr2gray_np(true_data)
-                pred_data = bgr2gray_np(pred_data)
-            psnr_err, ssim_err = metrics(seq_batch, opt, true_data, pred_data, psnr_err, ssim_err, multichannel=(opt.data != 'KTH'))
+            psnr_err, ssim_err = metrics(seq_batch, opt, true_data, pred_data, psnr_err, ssim_err, savedir, multichannel=(opt.data != 'KTH'))
 
         if i % (save_freq) == 0 or i == (dataset_size-1):
             print('psnr:', psnr_err.mean(axis=0))

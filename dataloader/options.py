@@ -19,6 +19,7 @@ class TestOptions(object):
         self.parser.add_argument('--dataroot', required=True,  help='path to videos (should have subfolders trainA, trainB, valA, valB, etc)')
         self.parser.add_argument('--textroot', required=True, help='path to trainings (should have subfolders trainA, trainB, valA, valB, etc)')
         self.parser.add_argument('--video_list', type=str, default='test_data_list.txt', help='the name of the videolist file')
+        self.parser.add_argument('--ckpt', type=str, default='network-lf.pytorch', help='the name of the ckpt to load')
 
         # Data Augment
         self.parser.add_argument('--data', required=True, type=str, help="name of test dataset [KTH|UCF]")
@@ -46,6 +47,9 @@ class TestOptions(object):
         self.opt.video_list = 'test_data_list.txt'
         self.opt.quant_dir = os.path.join(self.opt.result_dir, 'quantitative', self.opt.data, self.opt.name + '_' + str(self.opt.K) + '_' + str(self.opt.T))
         makedir(self.opt.quant_dir)
+        self.opt.img_dir = os.path.join(self.opt.result_dir, 'images', self.opt.data,
+                                          self.opt.name + '_' + str(self.opt.K) + '_' + str(self.opt.T))
+        makedir(self.opt.img_dir)
 
         file_name = os.path.join(self.opt.quant_dir, 'opt.txt')
         with open(file_name, 'wt') as opt_file:

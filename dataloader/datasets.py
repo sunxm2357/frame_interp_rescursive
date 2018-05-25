@@ -45,7 +45,7 @@ class KthDataset(object):
         for t in range(self.seq_len):
             while True:
                 try:
-                    img = cv2.resize(vid.get_data(stidx + t), (self.image_size[1], self.image_size[0])),
+                    img = cv2.resize(vid.get_data(stidx + t), (self.image_size[1], self.image_size[0]))
                     break
                 except Exception:
                     print('in cv2', self.vid_path, stidx+t)

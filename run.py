@@ -36,12 +36,12 @@ torch.backends.cudnn.enabled = True  # make sure to use cudnn for computational 
 #
 #
 # # end
-# # end
+#
+#  end
 
 ##########################################################
-
 class Network(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, ckpt):
         super(Network, self).__init__()
 
         def Basic(intInput, intOutput):
@@ -122,7 +122,7 @@ class Network(torch.nn.Module):
             [int(math.floor(51 / 2.0)), int(math.floor(51 / 2.0)), int(math.floor(51 / 2.0)),
              int(math.floor(51 / 2.0))])
 
-        self.load_state_dict(torch.load('./network-' + arguments_strModel + '.pytorch'))
+        self.load_state_dict(torch.load(ckpt))
 
     # end
 
@@ -175,11 +175,9 @@ class Network(torch.nn.Module):
 # end
 # end
 
-moduleNetwork = Network().cuda()
-
 
 ##########################################################
-def single_pred(first_img, last_img):
+def single_pred(first_img, last_img, moduleNetwork):
     tensorInputFirst = torch.FloatTensor(np.rollaxis(first_img, 2, 0).astype(np.float32) / 255.0)
     tensorInputSecond = torch.FloatTensor(np.rollaxis(last_img, 2, 0).astype(np.float32) / 255.0)
     tensorOutput = torch.FloatTensor()

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-python src/trivial_test.py  \
-    --name=kth_SA_P_F\
+python test_KTH.py  \
+    --name=kth_recursive\
     --K=${1} \
     --F=${1} \
     --T=${2} \
